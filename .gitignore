@@ -1,0 +1,12 @@
+__pycache__
+
+# Ignorar artefactos
+output/
+uploads/
+
+# Ignorar todo lo que haya en config por defecto
+config/*
+
+# EXCEPCIONES en config: estos sí se suben
+!config/acme.issuer.json
+!config/python.badge_class.json

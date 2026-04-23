@@ -1,0 +1,22 @@
+{
+  "@context": "https://w3id.org/openbadges/v2",
+  "id": "https://acme.example.org/badges/python.badge_class.json",
+  "type": "BadgeClass",
+  "name": {
+    "ES": "Introducción a Python",
+    "EN": "Introduction to Python"
+  },
+  "description": {
+    "ES": "Badge de ejemplo emitido por ACME por completar un curso introductorio de Python.",
+    "EN": "Sample badge issued by ACME for completing an introductory Python course."
+  },
+  "image": "https://acme.example.org/badges/images/python.png",
+  "criteria": {
+    "id": "https://acme.example.org/badges/python/criteria.html",
+    "narrative": {
+      "ES": "Completar con éxito el curso de introducción a Python.",
+      "EN": "Successfully complete the introductory Python course."
+    }
+  },
+  "issuer": "https://acme.example.org/issuer/acme.issuer.json"
+}

@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Verificación de Open Badge / Open Badge Verification</title>
+  </head>
+  <body>
+    <h1>Verificación de Open Badge 2.0 / Open Badge Verification</h1>
+
+    <h2>1. Verificar por ID / Verify by ID</h2>
+    <form action="/verify-id" method="post">
+      <label for="assertion_id">ID de la assertion / Assertion ID:</label>
+      <input type="text" id="assertion_id" name="assertion_id" required />
+      <button type="submit">Verificar / Verify</button>
+    </form>
+
+    <h2>2. Verificar subiendo PNG / Verify by uploading PNG</h2>
+    <form action="/verify-png" method="post" enctype="multipart/form-data">
+      <label for="file">Selecciona un PNG horneado / Choose baked PNG:</label>
+      <input type="file" id="file" name="file" accept="image/png" required />
+      <button type="submit">Verificar / Verify</button>
+    </form>
+  </body>
+</html>

@@ -1,0 +1,10 @@
+{
+  "@context": "https://w3id.org/openbadges/v2",
+  "id": "http://TU_DOMINIO/issuer/acme.issuer.json",
+  "type": "Issuer",
+  "name": "ACME S.A.",
+  "url": "https://acme.example.org",
+  "email": "badges@acme.example.org",
+  "description": "Organización ficticia utilizada como emisor de badges de ejemplo.",
+  "telephone": "+34 000 000 000"
+}

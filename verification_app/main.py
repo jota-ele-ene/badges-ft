@@ -21,7 +21,10 @@ app = FastAPI(title="Open Badges Verifier")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 ASSERTIONS_DIR = BASE_DIR / "output" / "assertions"
-STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+# AHORA static en la raíz del proyecto
+STATIC_DIR = BASE_DIR / "static"
+
 UPLOADS_DIR = BASE_DIR / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_DIR = BASE_DIR / "config"
@@ -30,18 +33,16 @@ BADGES_BAKED_DIR.mkdir(parents=True, exist_ok=True)
 
 # Servir /static para otros recursos si los necesitas
 app.mount(
-    "/static", 
-    StaticFiles(directory=str(STATIC_DIR)), 
-    name="static"
-    )
+    "/static",
+    StaticFiles(directory=str(STATIC_DIR)),
+    name="static",
+)
 
 app.mount(
     "/badges-baked",
     StaticFiles(directory=str(BADGES_BAKED_DIR)),
     name="badges-baked",
 )
-
-
 
 
 def listar_issuers():
@@ -56,6 +57,7 @@ def listar_issuers():
         resultados.append((p.name, display_name))
     return resultados
 
+
 def listar_badge_classes():
     resultados = []
     for p in sorted(CONFIG_DIR.glob("*.badge_class.json")):
@@ -65,7 +67,11 @@ def listar_badge_classes():
             name = data.get("name")
             # name puede ser string o dict con idiomas
             if isinstance(name, dict):
-                display_name = name.get("ES") or name.get("EN") or next(iter(name.values()))
+                display_name = (
+                    name.get("ES")
+                    or name.get("EN")
+                    or next(iter(name.values()))
+                )
             else:
                 display_name = name or p.name
         except Exception:
@@ -73,27 +79,57 @@ def listar_badge_classes():
         resultados.append((p.name, display_name))
     return resultados
 
+
 def html_page(body: str) -> HTMLResponse:
-    html = f"""
-    <!DOCTYPE html>
-    <html lang="es">
-      <head>
-        <meta charset="UTF-8" />
-        <title>Verificación de Open Badge</title>
-      </head>
-      <body>
-        <h1>Verificación de Open Badge / Open Badge Verification</h1>
-        {body}
-      </body>
-    </html>
     """
-    return HTMLResponse(html)
+    Envuelve el contenido `body` con header.html y footer.html
+    que están en STATIC_DIR.
+    """
+    header_path = STATIC_DIR / "header.html"
+    footer_path = STATIC_DIR / "footer.html"
+
+    try:
+        header_html = header_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        header_html = (
+            '<!DOCTYPE html><html lang="es"><head>'
+            '<meta charset="UTF-8"><title>Open Badges</title>'
+            '<link rel="stylesheet" href="/static/styles.css">'
+            '</head><body>'
+        )
+
+    try:
+        footer_html = footer_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        footer_html = "</body></html>"
+
+    full_html = f"""<!DOCTYPE html>
+                    <html lang="es">
+                    <head>
+                    <meta charset="UTF-8" />
+                    <title>Open Badges</title>
+                    <link rel="stylesheet" href="/static/styles.css">
+                    </head>
+                    <body>
+{header_html}<main>\n{body}\n</main>{footer_html}</body>
+</html>"""
+    return HTMLResponse(full_html)
 
 
 @app.get("/", response_class=HTMLResponse)
 async def home():
-    # Devolver directamente el fichero verify.html estático
-    return FileResponse(STATIC_DIR / "verify.html")
+    """
+    Página principal: carga verify.html desde STATIC_DIR y lo envuelve
+    con header.html y footer.html.
+    """
+    verify_path = STATIC_DIR / "verify.html"
+    if not verify_path.is_file():
+        body = "<h1>Error</h1><p>No se encuentra verify.html en /static.</p>"
+        return html_page(body)
+
+    verify_html = verify_path.read_text(encoding="utf-8")
+    return html_page(verify_html)
+
 
 @app.get("/assertions/{assertion_id}", response_class=JSONResponse)
 async def get_assertion(assertion_id: str):
@@ -135,48 +171,48 @@ async def verify_by_id(assertion_id: str = Form(...)):
     <pre>{pretty}</pre>
     <p><a href="/">Volver</a></p>
     <button onclick="openEmailVerifyModal('{assertion_id}')">
-    Verificar email del receptor
+      Verificar email del receptor
     </button>
 
     <div id="email-modal" style="display:none;">
-    <form onsubmit="return checkEmailHash(event);">
+      <form onsubmit="return checkEmailHash(event);">
         <input type="hidden" id="assertion_id" value="{assertion_id}" />
         <label>Email del receptor:</label>
         <input type="email" id="email_to_check" required />
         <button type="submit">Comprobar</button>
-    </form>
-    <div id="email-check-result"></div>
+      </form>
+      <div id="email-check-result"></div>
     </div>
     """ + """
     <script>
     function openEmailVerifyModal(assertionId) {
-    document.getElementById('assertion_id').value = assertionId;
-    document.getElementById('email-modal').style.display = 'block';
+      document.getElementById('assertion_id').value = assertionId;
+      document.getElementById('email-modal').style.display = 'block';
     }
 
     async function checkEmailHash(event) {
-    event.preventDefault();
-    const assertionId = document.getElementById('assertion_id').value;
-    const email = document.getElementById('email_to_check').value;
+      event.preventDefault();
+      const assertionId = document.getElementById('assertion_id').value;
+      const email = document.getElementById('email_to_check').value;
 
-    const formData = new FormData();
-    formData.append('assertion_id', assertionId);
-    formData.append('email', email);
+      const formData = new FormData();
+      formData.append('assertion_id', assertionId);
+      formData.append('email', email);
 
-    const resp = await fetch('/verify-email-hash', {
+      const resp = await fetch('/verify-email-hash', {
         method: 'POST',
         body: formData
-    });
-    const data = await resp.json();
-    const resultElem = document.getElementById('email-check-result');
-    if (!data.ok) {
+      });
+      const data = await resp.json();
+      const resultElem = document.getElementById('email-check-result');
+      if (!data.ok) {
         resultElem.textContent = 'Error: ' + (data.error || 'desconocido');
-    } else if (data.match) {
+      } else if (data.match) {
         resultElem.textContent = 'El email coincide con el hash del badge.';
-    } else {
+      } else {
         resultElem.textContent = 'El email NO coincide con el hash del badge.';
-    }
-    return false;
+      }
+      return false;
     }
     </script>
     """
@@ -207,48 +243,48 @@ async def verify_by_png(file: UploadFile = File(...)):
             <pre>{pretty}</pre>
             <p><a href="/">Volver</a></p>
             <button onclick="openEmailVerifyModal('{assertion_id}')">
-            Verificar email del receptor
+              Verificar email del receptor
             </button>
 
             <div id="email-modal" style="display:none;">
-            <form onsubmit="return checkEmailHash(event);">
+              <form onsubmit="return checkEmailHash(event);">
                 <input type="hidden" id="assertion_id" value="{assertion_id}" />
                 <label>Email del receptor:</label>
                 <input type="email" id="email_to_check" required />
                 <button type="submit">Comprobar</button>
-            </form>
-            <div id="email-check-result"></div>
+              </form>
+              <div id="email-check-result"></div>
             </div>
             """ + """
             <script>
             function openEmailVerifyModal(assertionId) {
-            document.getElementById('assertion_id').value = assertionId;
-            document.getElementById('email-modal').style.display = 'block';
+              document.getElementById('assertion_id').value = assertionId;
+              document.getElementById('email-modal').style.display = 'block';
             }
 
             async function checkEmailHash(event) {
-            event.preventDefault();
-            const assertionId = document.getElementById('assertion_id').value;
-            const email = document.getElementById('email_to_check').value;
+              event.preventDefault();
+              const assertionId = document.getElementById('assertion_id').value;
+              const email = document.getElementById('email_to_check').value;
 
-            const formData = new FormData();
-            formData.append('assertion_id', assertionId);
-            formData.append('email', email);
+              const formData = new FormData();
+              formData.append('assertion_id', assertionId);
+              formData.append('email', email);
 
-            const resp = await fetch('/verify-email-hash', {
+              const resp = await fetch('/verify-email-hash', {
                 method: 'POST',
                 body: formData
-            });
-            const data = await resp.json();
-            const resultElem = document.getElementById('email-check-result');
-            if (!data.ok) {
+              });
+              const data = await resp.json();
+              const resultElem = document.getElementById('email-check-result');
+              if (!data.ok) {
                 resultElem.textContent = 'Error: ' + (data.error || 'desconocido');
-            } else if (data.match) {
+              } else if (data.match) {
                 resultElem.textContent = 'El email coincide con el hash del badge.';
-            } else {
+              } else {
                 resultElem.textContent = 'El email NO coincide con el hash del badge.';
-            }
-            return false;
+              }
+              return false;
             }
             </script>
             """
@@ -271,6 +307,7 @@ async def verify_by_png(file: UploadFile = File(...)):
 
     return html_page(body)
 
+
 @app.get("/issuer", response_class=HTMLResponse)
 async def issuer_form():
     issuers = listar_issuers()          # lista de (filename, display_name)
@@ -291,94 +328,95 @@ async def issuer_form():
     body = f"""
     <h2>Emisión de badges / Badge Issuer</h2>
     <form id="issuer_form" action="/issuer/preview" method="post" enctype="multipart/form-data">
-    <h3>Issuer</h3>
-    <select name="issuer_choice" id="issuer_choice" required>
+      <h3>Issuer</h3>
+      <select name="issuer_choice" id="issuer_choice" required>
         {issuer_options}
-    </select>
+      </select>
 
-    <h3>Badge Class</h3>
-    <select name="badge_choice" id="badge_choice" required>
+      <h3>Badge Class</h3>
+      <select name="badge_choice" id="badge_choice" required>
         {badge_options}
-    </select>
+      </select>
 
-    <h3>2. Receptores / Recipients</h3>
-    <p>Puedes indicar un solo email o subir un CSV.</p>
-    <label for="email">Email único (opcional):</label>
-    <input type="email" id="email" name="email" />
+      <h3>2. Receptores / Recipients</h3>
+      <p>Puedes indicar un solo email o subir un CSV.</p>
+      <label for="email">Email único (opcional):</label>
+      <input type="email" id="email" name="email" />
 
-    <br /><br />
-    <label for="csv_file">CSV de contactos (opcional):</label>
-    <input type="file" id="csv_file" name="csv_file" accept=".csv" />
+      <br /><br />
+      <label for="csv_file">CSV de contactos (opcional):</label>
+      <input type="file" id="csv_file" name="csv_file" accept=".csv" />
 
-    <h3>3. Imagen PNG del badge / Badge PNG image</h3>
-    <input type="file" id="image_file" name="image_file" accept="image/png" required />
+      <h3>3. Imagen PNG del badge / Badge PNG image</h3>
+      <input type="file" id="image_file" name="image_file" accept="image/png" required />
 
-    <br /><br />
-    <button type="submit">Previsualizar emisión / Preview issuance</button>
+      <br /><br />
+      <button type="submit">Previsualizar emisión / Preview issuance</button>
     </form>
 
     <p><a href="/">Volver a la verificación</a></p>
     <div id="config-modal" style="display:none;">
-    <form onsubmit="return uploadConfigJson(event);">
+      <form onsubmit="return uploadConfigJson(event);">
         <label>Tipo:</label>
         <select id="config_kind">
-        <option value="issuer">Issuer</option>
-        <option value="badge">BadgeClass</option>
+          <option value="issuer">Issuer</option>
+          <option value="badge">BadgeClass</option>
         </select>
         <label>Nombre base (sin extensión):</label>
         <input type="text" id="config_name" required />
         <label>Fichero JSON:</label>
         <input type="file" id="config_file" accept="application/json" required />
         <button type="submit">Subir</button>
-    </form>
-    <div id="config-upload-result"></div>
+      </form>
+      <div id="config-upload-result"></div>
     </div>
     """ + """
     <script>
     document.querySelector('select[name="issuer_choice"]').addEventListener('change', function() {
-    if (this.value === '__new__') {
+      if (this.value === '__new__') {
         openConfigModal('issuer');
-    }
+      }
     });
     document.querySelector('select[name="badge_choice"]').addEventListener('change', function() {
-    if (this.value === '__new__') {
+      if (this.value === '__new__') {
         openConfigModal('badge');
-    }
+      }
     });
 
     function openConfigModal(kind) {
-    document.getElementById('config_kind').value = kind;
-    document.getElementById('config-modal').style.display = 'block';
+      document.getElementById('config_kind').value = kind;
+      document.getElementById('config-modal').style.display = 'block';
     }
 
     async function uploadConfigJson(event) {
-    event.preventDefault();
-    const kind = document.getElementById('config_kind').value;
-    const name = document.getElementById('config_name').value;
-    const fileInput = document.getElementById('config_file');
-    if (!fileInput.files.length) return false;
+      event.preventDefault();
+      const kind = document.getElementById('config_kind').value;
+      const name = document.getElementById('config_name').value;
+      const fileInput = document.getElementById('config_file');
+      if (!fileInput.files.length) return false;
 
-    const formData = new FormData();
-    formData.append('kind', kind);
-    formData.append('name', name);
-    formData.append('file', fileInput.files[0]);
+      const formData = new FormData();
+      formData.append('kind', kind);
+      formData.append('name', name);
+      formData.append('file', fileInput.files[0]);
 
-    const resp = await fetch('/config/upload-json', {
+      const resp = await fetch('/config/upload-json', {
         method: 'POST',
         body: formData
-    });
-    const data = await resp.json();
-    const resultElem = document.getElementById('config-upload-result');
-    if (!data.ok) {
+      });
+      const data = await resp.json();
+      const resultElem = document.getElementById('config-upload-result');
+      if (!data.ok) {
         resultElem.textContent = 'Error: ' + (data.error || 'desconocido');
-    } else {
+      } else {
         resultElem.textContent = 'Subido como ' + data.filename + '. Recarga la página para verlo en el selector.';
-    }
-    return false;
+      }
+      return false;
     }
     </script>
     """
     return html_page(body)
+
 
 @app.post("/issuer/preview", response_class=HTMLResponse)
 async def issuer_preview(
@@ -552,6 +590,7 @@ async def issuer_preview(
     body += '<p><a href="/issuer">Modificar datos de emisión</a></p>'
     return html_page(body)
 
+
 @app.post("/issuer/exec", response_class=HTMLResponse)
 async def issuer_exec(
     request: Request,
@@ -583,8 +622,6 @@ async def issuer_exec(
         config = json.load(f)
 
     # Ajustar la imagen en la config para que use la subida por web
-    # Dejamos directory fijo ("badges") y copiamos la imagen allí si quieres,
-    # pero para hornear ya estamos usando image_path, así que basta con guardar el nombre.
     config.setdefault("image", {})
     config["image"]["file"] = image_path.name
     config["image"]["directory"] = str(image_path.parent)
@@ -647,27 +684,29 @@ async def issuer_exec(
                     }
                 )
     elif email:
-            # Modo email único
-            assertion_id = str(uuid.uuid4())
-            assertion = construir_assertion(
-                config=config,
-                assertion_id=assertion_id,
-                email=email,
-                nombre=None,
-                apellido1=None,
-                apellido2=None,
-                lang_override=None,
-                hosted_base_url=hosted_base_url,
-                image_public_base_url=image_public_base_url,
-            )
-            ruta_json = guardar_assertion(assertion, OUTPUT_DIR, assertion_id)
-            ruta_png = hornear_png(config, assertion, OUTPUT_DIR, assertion_id)
-            emitted.append({
+        # Modo email único
+        assertion_id = str(uuid.uuid4())
+        assertion = construir_assertion(
+            config=config,
+            assertion_id=assertion_id,
+            email=email,
+            nombre=None,
+            apellido1=None,
+            apellido2=None,
+            lang_override=None,
+            hosted_base_url=hosted_base_url,
+            image_public_base_url=image_public_base_url,
+        )
+        ruta_json = guardar_assertion(assertion, OUTPUT_DIR, assertion_id)
+        ruta_png = hornear_png(config, assertion, OUTPUT_DIR, assertion_id)
+        emitted.append(
+            {
                 "email": email,
                 "assertion_id": assertion_id,
                 "json": str(ruta_json),
                 "png": str(ruta_png),
-            })
+            }
+        )
     else:
         body = f"""
         <h2>Error al ejecutar emisión</h2>
@@ -710,6 +749,7 @@ async def issuer_exec(
     """
     return html_page(body)
 
+
 @app.post("/verify-email-hash", response_class=JSONResponse)
 async def verify_email_hash(assertion_id: str = Form(...), email: str = Form(...)):
     """
@@ -719,14 +759,19 @@ async def verify_email_hash(assertion_id: str = Form(...), email: str = Form(...
     """
     ruta_json = ASSERTIONS_DIR / f"{assertion_id}.json"
     if not ruta_json.is_file():
-        return JSONResponse(status_code=404, content={"ok": False, "error": "Assertion no encontrado"})
+        return JSONResponse(
+            status_code=404,
+            content={"ok": False, "error": "Assertion no encontrado"},
+        )
 
     with ruta_json.open("r", encoding="utf-8") as f:
         data = json.load(f)
 
     recipient = data.get("recipient", {})
     if not recipient.get("hashed"):
-        return JSONResponse(content={"ok": False, "error": "El recipient no está hashed"})
+        return JSONResponse(
+            content={"ok": False, "error": "El recipient no está hashed"},
+        )
 
     identity = recipient.get("identity", "")
     salt = recipient.get("salt", "")
@@ -739,6 +784,7 @@ async def verify_email_hash(assertion_id: str = Form(...), email: str = Form(...
 
     match = (identity == expected)
     return JSONResponse(content={"ok": True, "match": match})
+
 
 @app.post("/config/upload-json", response_class=JSONResponse)
 async def upload_config_json(
@@ -753,21 +799,30 @@ async def upload_config_json(
     """
     safe_name = "".join(c for c in name if c.isalnum() or c in "-_").strip()
     if not safe_name:
-        return JSONResponse(status_code=400, content={"ok": False, "error": "Nombre inválido"})
+        return JSONResponse(
+            status_code=400,
+            content={"ok": False, "error": "Nombre inválido"},
+        )
 
     if kind == "issuer":
         filename = f"{safe_name}.issuer.json"
     elif kind == "badge":
         filename = f"{safe_name}.badge_class.json"
     else:
-        return JSONResponse(status_code=400, content={"ok": False, "error": "Tipo inválido"})
+        return JSONResponse(
+            status_code=400,
+            content={"ok": False, "error": "Tipo inválido"},
+        )
 
     target_path = CONFIG_DIR / filename
     contents = await file.read()
     try:
         data = json.loads(contents.decode("utf-8"))
     except Exception:
-        return JSONResponse(status_code=400, content={"ok": False, "error": "JSON inválido"})
+        return JSONResponse(
+            status_code=400,
+            content={"ok": False, "error": "JSON inválido"},
+        )
 
     with target_path.open("w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)

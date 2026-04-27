@@ -1,14 +1,15 @@
 # Open Badges FT – Emisor y Verificador 2.0
 
-Aplicación web basada en **FastAPI** para **emitir** y **verificar** insignias digitales compatibles con **Open Badges 2.0** mediante assertions alojadas (HostedBadge) y PNG horneados. [web:213][web:214]
+Aplicación web basada en **FastAPI** para **emitir** y **verificar** insignias digitales compatibles con **Open Badges 2.0** mediante assertions alojadas (HostedBadge) y PNG horneados. [1][2]
 
 Permite:
-- Verificar badges a partir de una **URL de assertion** o de un **PNG horneado**.
-- Emitir badges para **uno o varios receptores** (email único o CSV).
-- Generar **Assertions 2.0 hosted** (JSON) y **PNG horneados** listos para validadores externos.
-- Gestionar **Issuer** y **BadgeClass** mediante ficheros JSON reutilizables en el directorio `config/`.
+- Verificar badges a partir de una **URL de assertion** o de un **PNG horneado**. [1][2]
+- Emitir badges para **uno o varios receptores** (email único o CSV). [3]
+- Generar **Assertions 2.0 hosted** (JSON) y **PNG horneados** listos para validadores externos. [1][2]
+- Gestionar **Issuer** y **BadgeClass** mediante ficheros JSON reutilizables en el directorio `config/`. [3]
+- Proteger rutas privadas con **JWT** en la versión actualizada del backend, por lo que es necesario instalar `PyJWT` si se usa el `main.py` actualizado. 
 
----
+***
 
 ## Árbol de directorios
 
@@ -28,13 +29,16 @@ badges-ft/
 │       └── image.png             # Imagen base subida para el lote
 ├── verification_app/
 │   ├── __init__.py
-│   └── main.py                   # Aplicación FastAPI (verificación y emisión)
+│   └── main.py                   # Aplicación FastAPI (verificación, emisión y login JWT)
+├── static/
+│   ├── footer.html               # Footer que carga la protección cliente
+│   └── auth-guard.js             # JS que propaga token y redirige a /login
 ├── generate_badges.py            # Construcción de assertions y horneado de PNG
-├── requirements.txt              # Dependencias Python (FastAPI, Uvicorn, etc.)
+├── requirements.txt              # Dependencias Python
 └── README.md                     # Este fichero
 ```
 
----
+***
 
 ## Instalación local (sin Docker)
 
@@ -49,7 +53,7 @@ git clone <URL_DEL_REPO> .
 
 ### 2. Crear entorno virtual
 
-Se recomienda Python 3.11+.
+Se recomienda Python 3.11+ para la ejecución local. [4][5]
 
 ```bash
 python -m venv .venv
@@ -58,18 +62,27 @@ source .venv/bin/activate      # Linux/macOS
 # .venv\Scripts\Activate.ps1
 ```
 
-### 3. Instalar dependencias
+
+### 3. Instalar dependencias:
 
 ```bash
-pip install --upgrade pip
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
-Si no hubiera `requirements.txt`, lo mínimo es:
+## requirements.txt
 
-```bash
-pip install "fastapi" "uvicorn[standard]"
+El archivo `requirements.txt` debe estar en la raíz del proyecto y contener:
+
+```txt
+fastapi
+uvicorn[standard]
+python-multipart
+PyJWT
+python-dotenv
+openbadges-bakery
+Pillow
 ```
+
 
 ### 4. Crear directorios de trabajo
 
@@ -77,9 +90,14 @@ pip install "fastapi" "uvicorn[standard]"
 mkdir -p config
 mkdir -p output/assertions output/badges_baked
 mkdir -p uploads
+mkdir -p static
 ```
 
----
+### 5. Colocar los archivos estáticos del guard
+
+El archivo `auth-guard.js` debe colocarse en `static/auth-guard.js`, y el `footer.html` debe estar en `static/footer.html`, porque la aplicación monta `/static` desde esa carpeta y el footer carga el script desde `src="/static/auth-guard.js"`. 
+
+***
 
 ## Puesta en marcha local
 
@@ -89,9 +107,9 @@ Desde la raíz del proyecto:
 uvicorn verification_app.main:app --host 0.0.0.0 --port 8000
 ```
 
-La aplicación quedará disponible en `http://localhost:8000` y podrás acceder a la UI de verificación y emisión. [web:194]
+La aplicación quedará disponible en `http://localhost:8000`. Uvicorn es una forma estándar de servir apps FastAPI, y FastAPI documenta este patrón de despliegue también en contenedores. [4][5]
 
----
+***
 
 ## Uso de la aplicación
 
@@ -100,25 +118,35 @@ La aplicación quedará disponible en `http://localhost:8000` y podrás acceder 
 - URL base: `http://localhost:8000/`
 
 Funciones:
-- **Verificar por URL de assertion**: se introduce la URL HTTP donde está alojado el JSON de la Assertion 2.0; se comprueba estructura, tipo `Assertion` y verificación HostedBadge. [web:213][web:220]
-- **Verificar por PNG horneado**: se sube un `.png` con metadatos Open Badges embebidos; se extrae la assertion y se contrasta con la versión alojada si aplica. [web:214]
+- **Verificar por ID / assertion alojada**: la verificación hosted en Open Badges 2.0 se basa en una Assertion HTTP(S) con tipo `HostedBadge`, validada a partir del `id` de la assertion. [1]
+- **Verificar por PNG horneado**: se sube un `.png` con metadatos Open Badges embebidos; el badge baking permite extraer la assertion desde la imagen y verificarla. [2][6]
+
+### Login y protección de rutas
+
+- URL de login: `http://localhost:8000/login`
+
+Flujo:
+1. El usuario introduce su correo en `/login`. 
+2. El backend genera un JWT con `email` y `tkn`, donde `tkn` es el hash SHA-256 del correo normalizado. 
+3. Todas las rutas salvo `/`, `/login`, `/verify-id` y `/verify-png` redirigen a `/login` si no reciben un token válido. 
+4. El archivo `static/auth-guard.js` añade el token a enlaces, formularios y llamadas `fetch`, y redirige también al login en cliente si no encuentra un token coherente. 
 
 ### Emisión de badges
 
 - URL de emisión: `http://localhost:8000/issuer`
 
 Flujo:
-1. **Seleccionar Issuer y BadgeClass** desde los JSON que haya en `config/`.
-2. **Definir receptores**: email único o fichero `recipients.csv` con cabecera que incluya columna `email`.
-3. **Subir imagen base** del badge (PNG).
-4. **Previsualizar lote** (`/issuer/preview`): se crea un `batch_id` y carpeta en `uploads/<batch_id>/` con `config.json`, `image.png` y `recipients.csv`.
-5. **Ejecutar emisión** (`/issuer/exec`): se generan assertions Open Badges 2.0 y PNG horneados en `output/assertions/` y `output/badges_baked/`.
+1. **Seleccionar Issuer y BadgeClass** desde los JSON que haya en `config/`. [3]
+2. **Definir receptores**: email único o fichero `recipients.csv` con cabecera que incluya columna `email`. [3]
+3. **Subir imagen base** del badge (PNG). [3]
+4. **Previsualizar lote** (`/issuer/preview`): se crea un `batch_id` y una carpeta en `uploads/<batch_id>/` con `config.json`, `image.png` y `recipients.csv` si aplica. [3]
+5. **Ejecutar emisión** (`/issuer/exec`): se generan assertions Open Badges 2.0 y PNG horneados en `output/assertions/` y `output/badges_baked/`. [3]
 
 Cada receptor obtiene:
-- Una Assertion 2.0 alojada (HostedBadge) accesible vía `/assertions/<assertion_id>.json`.
-- Un PNG horneado accesible vía `/badges-baked/<assertion_id>.png`. [web:213]
+- Una Assertion 2.0 alojada accesible vía `/assertions/<assertion_id>`. [1]
+- Un PNG horneado accesible vía `/badges-baked/<assertion_id>.png` o nombre equivalente generado en salida. [2]
 
----
+***
 
 ## Configuración de Issuer y BadgeClass
 
@@ -138,8 +166,8 @@ Ejemplo:
 }
 ```
 
-- `id` debe ser una URL estable y pública.
-- `name`, `url` y `email` identifican a la organización emisora. [web:214]
+- `id` debe ser una URL estable y pública. [1]
+- `name`, `url` y `email` identifican a la organización emisora. [1]
 
 ### BadgeClass (`config/*.badge_class.json`)
 
@@ -166,53 +194,42 @@ Ejemplo:
 }
 ```
 
-- `issuer` apunta al Issuer definido arriba.
-- La Assertion usará este `id` en el campo `badge`. [web:214]
+- `issuer` apunta al Issuer definido arriba. [1]
+- La Assertion usará este `id` en el campo `badge`. [1]
 
----
+***
 
 ## Despliegue con Docker (Debian)
 
-El proyecto incluye un `Dockerfile` basado en `python:3.12-slim` (Debian) para ejecutar la aplicación en contenedor de forma sencilla. [web:194][web:216]
+Un despliegue típico de FastAPI con Docker usa una imagen slim de Python, copia `requirements.txt`, instala dependencias y arranca Uvicorn con el módulo ASGI de la aplicación. [7][4][5]
 
 ### 1. Dockerfile
 
 Guarda esto como `Dockerfile` en la raíz:
 
 ```dockerfile
-# Dockerfile para ejecutar la app Open Badges FT en Debian (python:3.12-slim)
-
 FROM python:3.12-slim
 
-# Variables de entorno recomendadas
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Directorio de trabajo dentro del contenedor
 WORKDIR /app
 
-# Instalar paquetes básicos del sistema (amplía si necesitas libs adicionales)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends     curl     && rm -rf /var/lib/apt/lists/*
 
-# Copiar requirements e instalar dependencias Python
 COPY requirements.txt /app/requirements.txt
-RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r /app/requirements.txt
+RUN pip install --upgrade pip &&     pip install --no-cache-dir -r /app/requirements.txt
 
-# Copiar el código de la aplicación
 COPY . /app
 
-# Crear directorios necesarios para output y uploads
-RUN mkdir -p /app/output/assertions /app/output/badges_baked /app/uploads /app/config
+RUN mkdir -p /app/output/assertions /app/output/badges_baked /app/uploads /app/config /app/static
 
-# Exponer el puerto donde correrá Uvicorn
 EXPOSE 8000
 
-# Comando por defecto: lanzar FastAPI con Uvicorn
 CMD ["uvicorn", "verification_app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 ```
+
+Si usas el backend con JWT, asegúrate de que `requirements.txt` incluye `PyJWT>=2.8.0`, porque el módulo `verification_app.main` importa `jwt`. 
 
 ### 2. Construir la imagen
 
@@ -220,70 +237,65 @@ CMD ["uvicorn", "verification_app.main:app", "--host", "0.0.0.0", "--port", "800
 docker build -t openbadges-ft-debian .
 ```
 
-Esto crea una imagen con todas las dependencias listas para ejecutar la app mediante Uvicorn. [web:209][web:216]
+Esto crea una imagen con el patrón habitual de despliegue de FastAPI en contenedores ligeros de Python. [7][5]
 
 ### 3. Ejecutar el contenedor
 
 ```bash
-docker run --rm -it \
-  -p 8000:8000 \
-  -v "$(pwd)/config:/app/config" \
-  -v "$(pwd)/output:/app/output" \
-  -v "$(pwd)/uploads:/app/uploads" \
-  openbadges-ft-debian
+docker run --rm -it   -p 8000:8000   -v "$(pwd)/config:/app/config"   -v "$(pwd)/output:/app/output"   -v "$(pwd)/uploads:/app/uploads"   -v "$(pwd)/static:/app/static"   openbadges-ft-debian
 ```
 
-- `-p 8000:8000` expone la API en `http://localhost:8000`.
-- Los `-v` montan las carpetas locales para persistir configuración (`config`), assertions y PNG horneados (`output`) y lotes (`uploads`). [web:199][web:202]
+- `-p 8000:8000` expone la app en `http://localhost:8000`. [7][5]
+- Los `-v` montan configuración, resultados, lotes y ficheros estáticos para persistencia. 
 
 Con el contenedor arrancado:
-- `http://localhost:8000/` → verificación.
-- `http://localhost:8000/issuer` → emisión.
+- `http://localhost:8000/` → verificación. 
+- `http://localhost:8000/login` → acceso JWT. 
+- `http://localhost:8000/issuer` → emisión, redirigida a login si no hay token válido. 
 
----
+***
 
 ## Notas de despliegue
 
-- Limpia periódicamente `output/` y `uploads/` si generas muchos lotes.
-- Si se despliega detrás de un proxy (por ejemplo, Nginx o Traefik), ajusta:
-  - Puerto y host de Uvicorn.
-  - Las URLs en `Issuer`, `BadgeClass` y `Assertion` para usar el dominio público del proxy. [web:200][web:218]
+- Limpia periódicamente `output/` y `uploads/` si generas muchos lotes. [3]
+- Si se despliega detrás de un proxy, revisa las URLs públicas usadas en `Issuer`, `BadgeClass` y Assertions alojadas para que apunten al dominio real. La verificación hosted en Open Badges 2.0 depende de URLs HTTP(S) accesibles y coherentes. [1]
+- Configura `JWT_SECRET` como variable de entorno en producción para no depender del valor por defecto del backend. 
 
----
+***
 
 ## Detalle técnico: verificación de recipient (email hashed)
 
-Este proyecto utiliza el esquema estándar de **recipient hasheado** de Open Badges 2.0 para representar el email del receptor en la Assertion. [web:214][web:222]
+Open Badges 2.0 permite representar la identidad del receptor mediante un `recipient` hasheado para evitar exponer el email en texto plano. [8][1]
 
 ### Formato del recipient en la Assertion
 
-Cuando se emite un badge, en el JSON de la Assertion se incluye un bloque `recipient` como este:
+Cuando se emite un badge, el JSON de la Assertion incluye un bloque `recipient` como este:
 
 ```json
 "recipient": {
   "type": "email",
   "hashed": true,
-  "identity": "sha256<...>"
+  "identity": "sha256$<hash_hex>"
 }
 ```
 
-- `type`: se usa `email` para indicar que la identidad del receptor es una dirección de correo electrónico. [web:214]  
-- `hashed: true`: indica que el valor de `identity` es un hash, no el email en texto plano.  
-- `identity`: contiene el hash del email en formato `sha256$<hash_hex>`, donde `<hash_hex>` es el resultado de aplicar SHA-256 al email normalizado. [web:225]
+- `type`: se usa `email` para indicar que la identidad del receptor es una dirección de correo electrónico. [1]
+- `hashed: true`: indica que el valor de `identity` es un hash. [1]
+- `identity`: contiene el hash del email en formato `sha256$<hash_hex>`. [9][1]
 
-En la implementación actual **no se utiliza `salt`**, por lo que no aparece el campo `salt` en el JSON del recipient. Según la especificación, si `salt` no está presente, se asume que el hash se ha calculado sin sal. [web:214]
+Si `salt` no está presente, la especificación indica que debe asumirse que el hash no está salado. [9][1]
 
 ### Cómo se calcula el hash del email
 
 Al emitir un badge:
 
-1. El email se normaliza a minúsculas y se recortan espacios en blanco.
-2. Se aplica SHA-256 al email normalizado (sin sal).
-3. Se construye la `identity` como:
+1. El email se normaliza a minúsculas y se recortan espacios en blanco. [3]
+2. Se aplica SHA-256 al email normalizado. [3]
+3. Se construye `identity` como:
 
-   ```text
-   identity = "sha256$" + sha256(email_normalizado)
-   ```
+```text
+identity = "sha256$" + sha256(email_normalizado)
+```
 
 En pseudocódigo:
 
@@ -293,18 +305,16 @@ digest = sha256(email_norm.encode("utf-8")).hexdigest()
 identity = f"sha256${digest}"
 ```
 
-Este valor se guarda en `recipient.identity` junto con `hashed: true`. [web:214][web:225]
+Este valor se guarda en `recipient.identity` junto con `hashed: true`. [3][8][1]
 
 ### Cómo se verifica el email del receptor
 
-La interfaz de verificación permite introducir un email para comprobar si coincide con el recipient del badge:
+La interfaz de verificación permite introducir un email para comprobar si coincide con el recipient del badge. [3]
 
-1. Se recupera la Assertion correspondiente al `assertion_id` que se está inspeccionando.
-2. Se extraen `recipient.identity` (y `recipient.salt` si existiera).
-3. Se normaliza el email introducido (minúsculas, sin espacios).
-4. Se recalcula el hash usando la misma lógica que en la emisión.
-5. Se compara el valor calculado con `recipient.identity`:
-   - Si coinciden, se muestra el mensaje “El email coincide con el hash del badge”.
-   - Si no coinciden, se indica que el email no coincide.
+1. Se recupera la Assertion correspondiente al `assertion_id`. [3]
+2. Se extraen `recipient.identity` y `recipient.salt` si existe. [3][1]
+3. Se normaliza el email introducido. [3]
+4. Se recalcula el hash con la misma lógica. [3]
+5. Se compara el valor calculado con `recipient.identity`; si coinciden, la interfaz indica que el email corresponde al badge. [3][8]
 
-Este mecanismo permite comprobar que un badge pertenece a un email concreto **sin exponer el correo en texto plano** en el JSON público de la Assertion, siguiendo las recomendaciones de la especificación Open Badges 2.0 sobre hashing del recipient. [web:214][web:222]
+Este mecanismo permite comprobar la pertenencia del badge a un email concreto sin exponer el correo en texto plano en la Assertion pública. [8][1]

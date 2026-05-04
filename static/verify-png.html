@@ -1,0 +1,169 @@
+  <div class="welcome-card" style="text-align:justify!important">
+
+    <!-- Cabecera de resultados -->
+    <header class="app-header" style="padding-bottom: 1rem;">
+      <div class="app-header-main">
+        <h1 class="app-header-title">Datos de tu credencial</h1>
+      </div>
+      <div class="app-header-meta">
+        <span><i>Assertion ID</i>: <strong>{assertion_id_safe}</strong></span>
+      </div>
+    </header>
+
+    <!-- Bloque principal: imagen + info -->
+    <section class="card">
+
+    <!-- Fila 1: imagen + datos del badge -->
+    <div class="badge-header">
+        <!-- Columna imagen -->
+        <div class="badge-image-col">
+          <form id="verify-id-form" method="post" action="/verify-id" style="display:none;">
+            <input type="hidden" name="assertion_id" value="{assertion_id_safe}">
+          </form>
+          <div class="preview-image-wrapper">
+            <a href="#" onclick="document.getElementById('verify-id-form').submit(); return false;">
+              <img src="{image_url_safe}" alt="Badge" class="badge-image">
+            </a>
+          </div>
+          <!--<p class="form-help" style="margin-top:.5rem;">Imagen horneada del badge en formato Open Badges 2.0.</p>-->
+        </div>
+
+        <!-- Columna datos del badge -->
+        <div class="badge-data">
+        <p style="font-size:.85rem;color:var(--text-faint);margin-bottom:.25rem;">
+            <strong>Sobre el badge</strong>
+        </p>
+        <h2 style="font-size:1.3rem;margin:0 0 .3rem;">{badge_name_safe}</h2>
+        <p style="font-size:.9rem;color:var(--text-muted);margin-bottom:.4rem;">
+            <em>{badge_desc_safe}</em>
+        </p>
+        <p style="font-size:.85rem;margin-bottom:.4rem;">
+            Emitido por <strong>{issuer_name_safe}</strong>.
+        </p>
+        <p style="font-size:.85rem;">
+            <a href="{badge_url_safe}"
+            title="Open Badges Verification URL for the BadgeClass"
+            class="link-button" target="_blank" rel="noopener">
+            Ver ficha completa del badge
+            </a>
+        </p>
+        </div>
+    </div>
+
+    <!-- Fila 2: resto de información -->
+    <div class="badge-extra">
+        <!-- Sobre esta concesión -->
+        <div style="margin-bottom:1.4rem;">
+        <!--<p style="font-size:.85rem;color:var(--text-faint);margin-bottom:.25rem;"><strong>Sobre esta concesión</strong></p>-->
+        <p style="font-size:.9rem;margin-bottom:.25rem;">
+            <strong>Fecha de emisión</strong>: {issued_on_safe}
+        </p>
+        <p style="font-size:.9rem;margin-bottom:.25rem;">
+            <strong>Caducidad</strong>: {expiration_text_safe}
+        </p>
+        {recipient_alert_html}
+        <p style="font-size:.85rem;margin-top:.4rem;">
+            <a href="{assertion_url_safe}"
+            title="Open Badges Verification URL"
+            class="link-button" target="_blank" rel="noopener">
+            Ver detalles completos de la <i>assertion</i>
+            </a>
+        </p>
+        </div>
+
+        <!-- Sobre el emisor -->
+        <div>
+        <p style="font-size:.85rem;color:var(--text-faint);margin-bottom:.25rem;">
+            <strong>Sobre el emisor</strong>
+        </p>
+        <h3 style="font-size:1.05rem;margin:0 0 .3rem;">{issuer_name_safe}</h3>
+        <p style="font-size:.9rem;color:var(--text-muted);margin-bottom:.6rem;">
+            <em>{issuer_description_safe}</em>
+        </p>
+        <div style="display:flex;flex-wrap:wrap;gap:.75rem;font-size:.85rem;">
+            <span>{issuer_website_link}</span>
+            <span>{issuer_details_link}</span>
+        </div>
+        </div>
+    </div>
+
+    </section>
+
+    <!-- Detalles de verificación -->
+    <section class="card" style="margin-top:1rem;">
+      <h4 class="card-title" style="margin-bottom:.5rem;">Detalles de verificación</h4>
+      <p style="font-size:.9rem;margin-bottom:.25rem;">
+        <strong>Estado</strong>: {verification_status_text}
+      </p>
+      <p style="font-size:.9rem;margin-bottom:.25rem;">
+        <strong>Data Type</strong>: Assertion
+      </p>
+      <p style="font-size:.9rem;margin-bottom:.25rem;">
+        <strong>Open Badges Version</strong>: 2.0
+      </p>
+
+      <!-- Acciones: JSON y email -->
+      <div style="margin-top:3rem;">
+        <button type="button" class="btn btn-secondary btn-sm" style="margin-left:.5rem;"  onclick="window.history.back();">Volver</button>
+        <!--{email_button_html}-->
+      </div>
+
+<!--
+      <div id="json-panel" class="json-panel" aria-hidden="true">
+        <pre class="json-pre">{assertion_json_pretty}</pre>
+      </div>
+-->
+    </section>
+
+  </div>
+
+<!--{email_modal_html}-->
+
+<script>
+  function toggleJsonPanel() {{
+    const panel = document.getElementById('json-panel');
+    const isHidden = panel.getAttribute('aria-hidden') === 'true';
+    panel.setAttribute('aria-hidden', isHidden ? 'false' : 'true');
+    panel.classList.toggle('open');
+  }}
+
+  function openEmailVerifyModal(assertionId) {{
+    const hiddenInput = document.getElementById('assertion_id');
+    if (hiddenInput) hiddenInput.value = assertionId;
+    document.getElementById('email-modal-backdrop').classList.add('visible');
+  }}
+
+  function closeEmailModal() {{
+    document.getElementById('email-modal-backdrop').classList.remove('visible');
+  }}
+
+  async function checkEmailHash(event) {{
+    event.preventDefault();
+    const assertionId = document.getElementById('assertion_id').value;
+    const email = document.getElementById('email_to_check').value;
+
+    const formData = new FormData();
+    formData.append('assertion_id', assertionId);
+    formData.append('email', email);
+
+    const resp = await fetch("/verify-email-hash", {{
+      method: 'POST',
+      body: formData
+    }});
+
+    const data = await resp.json();
+    const resultElem = document.getElementById('email-check-result');
+
+    if (!data.ok) {{
+      resultElem.textContent = 'Error: ' + (data.error || 'desconocido');
+      resultElem.className = 'error';
+    }} else if (data.match) {{
+      resultElem.textContent = 'El email coincide con el hash del badge.';
+      resultElem.className = 'success';
+    }} else {{
+      resultElem.textContent = 'El email NO coincide con el hash del badge.';
+      resultElem.className = 'error';
+    }}
+    return false;
+  }}
+</script>

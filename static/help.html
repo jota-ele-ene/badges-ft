@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Verificación y emisión de credenciales</title>
+  <style>
+    :root {
+      --bg: #f5f7fa;
+      --surface: #ffffff;
+      --surface-soft: #f8fafc;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --line: #d7dee7;
+      --brand: #0f766e;
+      --brand-dark: #115e59;
+      --brand-soft: #ecfeff;
+      --brand-soft-2: #dff7f4;
+      --ok: #166534;
+      --ok-bg: #dcfce7;
+      --warn: #92400e;
+      --warn-bg: #fef3c7;
+      --bad: #991b1b;
+      --bad-bg: #fee2e2;
+      --shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+      --radius: 16px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: linear-gradient(180deg, #f2f7f8 0%, #f6f8fb 220px, #f5f7fa 220px);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    .topbar {
+      background: linear-gradient(90deg, var(--brand-dark), var(--brand));
+      color: #fff;
+      padding: 14px 24px;
+      font-size: 14px;
+      letter-spacing: .02em;
+    }
+    .wrap {
+      max-width: 1140px;
+      margin: 0 auto;
+      padding: 28px 20px 80px;
+    }
+    .breadcrumbs {
+      font-size: 14px;
+      color: var(--muted);
+      margin-bottom: 18px;
+    }
+    .breadcrumbs a {
+      color: var(--brand);
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr);
+      gap: 28px;
+      align-items: start;
+    }
+    .sidebar, .content-card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+    .sidebar {
+      position: sticky;
+      top: 24px;
+      padding: 22px;
+    }
+    .sidebar h3 {
+      margin: 0 0 12px;
+      font-size: 15px;
+      color: var(--brand-dark);
+    }
+    .sidebar a {
+      display: block;
+      padding: 8px 0;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 14px;
+    }
+    .sidebar a:hover { color: var(--brand-dark); }
+    .content-card { padding: 34px; }
+    .eyebrow {
+      display: inline-block;
+      background: var(--brand-soft);
+      color: var(--brand-dark);
+      border: 1px solid #bde8e2;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(31px, 4vw, 44px);
+      line-height: 1.12;
+      color: #0f172a;
+    }
+    .lead {
+      margin: 0 0 24px;
+      color: var(--muted);
+      font-size: 18px;
+      max-width: 70ch;
+    }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 18px;
+      font-size: 14px;
+      color: var(--muted);
+      margin-bottom: 26px;
+    }
+    .hero {
+      background: linear-gradient(135deg, var(--brand-soft) 0%, #eef8ff 100%);
+      border: 1px solid #cfe8e5;
+      border-radius: 22px;
+      padding: 24px;
+      margin-bottom: 32px;
+    }
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1.1fr .9fr;
+      gap: 22px;
+      align-items: center;
+    }
+    .card-preview {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 20px;
+      box-shadow: var(--shadow);
+    }
+    .badge-box {
+      width: 138px;
+      height: 138px;
+      border-radius: 28px;
+      background: linear-gradient(145deg, var(--brand-dark), #14b8a6);
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-weight: 800;
+      margin-bottom: 16px;
+      letter-spacing: .05em;
+    }
+    .pill {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .ok { background: var(--ok-bg); color: var(--ok); }
+    .warn { background: var(--warn-bg); color: var(--warn); }
+    h2 {
+      margin-top: 34px;
+      margin-bottom: 12px;
+      font-size: 26px;
+      color: #0f172a;
+    }
+    h3 {
+      margin-top: 24px;
+      margin-bottom: 8px;
+      font-size: 20px;
+    }
+    p { margin: 0 0 14px; }
+    .steps {
+      display: grid;
+      gap: 16px;
+      margin-top: 18px;
+    }
+    .step {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: #fff;
+      padding: 18px;
+    }
+    .step-num {
+      width: 34px;
+      height: 34px;
+      border-radius: 999px;
+      background: var(--brand-soft-2);
+      color: var(--brand-dark);
+      display: inline-grid;
+      place-items: center;
+      font-weight: 800;
+      margin-bottom: 10px;
+    }
+    .panel {
+      border: 1px solid #c9e3df;
+      border-left: 4px solid var(--brand);
+      border-radius: 14px;
+      padding: 16px 18px;
+      background: #fcfffe;
+      margin: 18px 0;
+    }
+    .twocol {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 14px;
+    }
+    .result {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      overflow: hidden;
+      background: #fff;
+    }
+    .result .head {
+      padding: 12px 16px;
+      font-weight: 800;
+    }
+    .result .body {
+      padding: 16px;
+      color: var(--muted);
+    }
+    .result.valid .head { background: var(--ok-bg); color: var(--ok); }
+    .result.review .head { background: var(--warn-bg); color: var(--warn); }
+    .cta-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 18px;
+    }
+    .cta {
+      background: var(--surface-soft);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 18px;
+    }
+    .cta a {
+      display: inline-block;
+      margin-top: 8px;
+      color: var(--brand-dark);
+      text-decoration: none;
+      font-weight: 700;
+    }
+    code {
+      background: #f3f4f6;
+      border-radius: 6px;
+      padding: 2px 6px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.95em;
+    }
+    .footer-note {
+      margin-top: 36px;
+      padding-top: 20px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 14px;
+    }
+    @media (max-width: 960px) {
+      .layout, .hero-grid, .twocol, .cta-grid { grid-template-columns: 1fr; }
+      .sidebar { position: static; }
+      .content-card { padding: 22px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">Verificación y emisión de credenciales</div>
+
+  <div class="wrap">
+    <div class="breadcrumbs">
+      <a href="#">Inicio</a> / <a href="#">Ayuda</a> / Verificación de credenciales
+    </div>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <h3>Contenido</h3>
+        <a href="#que-es">Qué puedes hacer</a>
+        <a href="#como-verificar">Cómo verificar una insignia</a>
+        <a href="#resultado">Interpretar el resultado</a>
+        <a href="#errores">Problemas frecuentes</a>
+        <a href="#acciones">Accesos rápidos</a>
+      </aside>
+
+      <main class="content-card">
+        <div class="eyebrow">Centro de ayuda</div>
+        <h1>Verificación y emisión de credenciales</h1>
+        <p class="lead">Esta guía está adaptada a tu proyecto para emitir badges, validar insignias digitales y revisar assertions o ficheros PNG desde una interfaz sencilla y clara.</p>
+
+        <div class="meta">
+          <span>Proyecto personalizado</span>
+          <span>Insignias digitales</span>
+          <span>Diseño adaptado a tu app</span>
+        </div>
+
+        <section class="hero" id="que-es">
+          <div class="hero-grid">
+            <div>
+              <h2 style="margin-top:0">Una ayuda alineada con tu plataforma</h2>
+              <p>He adaptado esta página a una identidad visual en tonos turquesa y verde petróleo, que encaja con la estética que ya aparece en tu proyecto y con el uso de mensajes de validación y estados de éxito dentro de tu aplicación.</p>
+              <div class="panel">
+                Nombre recomendado del proyecto: <strong>Verificación y emisión de credenciales</strong>. Tu aplicación ya combina validación de badges, carga de PNG, consulta de assertions y emisión por lotes, así que este nombre describe mejor el alcance real que el título original en inglés.
+              </div>
+            </div>
+            <div class="card-preview">
+              <div class="badge-box">BADGE</div>
+              <span class="pill ok">Estado correcto</span>
+              <p style="margin-top:12px">Ejemplo de credencial cargada y lista para ser validada por URL pública o por PNG embebido.</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="como-verificar">
+          <h2>Cómo verificar una insignia</h2>
+          <p>Tu aplicación ya dispone de rutas para verificar por ID, por PNG y para comprobar el email del receptor, así que esta página presenta ese flujo de forma más clara para el usuario. </p>
+
+          <div class="steps">
+            <div class="step">
+              <div class="step-num">1</div>
+              <h3>Sube un PNG o usa un identificador</h3>
+              <p>Puedes verificar una credencial subiendo el badge en formato PNG con metadatos embebidos o consultando directamente una assertion ya generada.</p>
+            </div>
+            <div class="step">
+              <div class="step-num">2</div>
+              <h3>Comprueba el resultado</h3>
+              <p>La verificación debe resolver correctamente la assertion, el emisor, la imagen y, si corresponde, el hash del receptor para confirmar que la insignia es válida.</p>
+            </div>
+            <div class="step">
+              <div class="step-num">3</div>
+              <h3>Revisa incidencias si falla</h3>
+              <p>Si la URL del badge no es pública o responde con HTML en vez de imagen, la validación externa puede fallar aunque el fichero exista dentro del entorno de desarrollo.</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="resultado">
+          <h2>Cómo interpretar el resultado</h2>
+          <p>La plataforma puede ofrecer un estado válido o un estado que requiere revisión en función de si todos los recursos asociados al badge son accesibles y coherentes.</p>
+
+          <div class="twocol">
+            <div class="result valid">
+              <div class="head">Credencial verificada</div>
+              <div class="body">
+                La insignia se considera correcta cuando la assertion existe, la imagen se sirve como recurso real y el verificador puede resolver su contenido sin redirecciones problemáticas.
+              </div>
+            </div>
+            <div class="result review">
+              <div class="head">Requiere revisión</div>
+              <div class="body">
+                Debes revisar la publicación si la URL del badge no es pública, si el servidor devuelve <code>text/html</code> en lugar de <code>image/png</code> o si el recurso queda protegido por autenticación externa.
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="errores">
+          <h2>Problemas frecuentes</h2>
+          <h3>La imagen abre en el navegador, pero no valida</h3>
+          <p>Esto suele ocurrir cuando el navegador accede con tu sesión, pero un verificador externo recibe una respuesta distinta, como una página intermedia o un recurso no público.</p>
+
+          <h3>La miniatura no coincide con la imagen subida</h3>
+          <p>Si la vista previa usa la imagen del <code>badge_class</code> en vez del fichero cargado en el formulario, la ayuda puede explicar claramente qué imagen se emplea en cada fase del proceso.</p>
+
+          <h3>El badge existe, pero la URL no es verdaderamente pública</h3>
+          <p>En entornos como Codespaces, marcar una ruta como pública dentro de FastAPI no siempre basta si el puerto o el dominio siguen protegidos a nivel externo.</p>
+
+          <div class="panel">
+            Consejo práctico: antes de compartir una insignia fuera de tu entorno, comprueba que la URL responde directamente con <code>Content-Type: image/png</code> y no requiere sesión, token ni redirecciones a otra página.
+          </div>
+        </section>
+
+        <section id="acciones">
+          <h2>Accesos rápidos sugeridos</h2>
+          <p>Tu aplicación ya expone rutas para verificar badges, emitir lotes y consultar assertions, así que esta sección puede enlazarse directamente con esas opciones de uso.</p>
+
+          <div class="cta-grid">
+            <div class="cta">
+              <h3 style="margin-top:0">Verificar por PNG</h3>
+              <p>Valida una insignia a partir del archivo horneado y consulta su contenido embebido.</p>
+              <a href="#">Ir a verificación por PNG</a>
+            </div>
+            <div class="cta">
+              <h3 style="margin-top:0">Consultar assertion</h3>
+              <p>Revisa una assertion concreta si ya conoces su identificador.</p>
+              <a href="#">Ir a verificación por ID</a>
+            </div>
+            <div class="cta">
+              <h3 style="margin-top:0">Emitir credenciales</h3>
+              <p>Lanza una emisión individual o por CSV desde el formulario de lotes.</p>
+              <a href="#">Ir a emisión</a>
+            </div>
+          </div>
+        </section>
+
+        <div class="footer-note">
+          Página de ayuda personalizada para tu proyecto de credenciales digitales. El título del proyecto en tu código aún figura como <strong>Open Badges Verifier</strong>, pero esta propuesta lo adapta a una denominación en español más clara para usuarios finales.
+        </div>
+      </main>
+    </div>
+  </div>
+</body>
+</html>

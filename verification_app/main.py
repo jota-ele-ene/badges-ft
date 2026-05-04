@@ -1,32 +1,33 @@
 from pathlib import Path
-import json
-import io
 import csv
-import uuid
 import hashlib
-import os
 import html
+import io
+import json
+import os
 import urllib.request
+import uuid
 from io import BytesIO
+from typing import Optional
 from urllib.parse import quote_plus
 
-from dotenv import load_dotenv
-load_dotenv()
-
 import jwt
-from fastapi import FastAPI, UploadFile, File, Form, Request
+from dotenv import load_dotenv
+from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from openbadges_bakery import unbake
+from PIL import Image, UnidentifiedImageError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.routing import Mount
-from openbadges_bakery import unbake
+
 from generate_badges import (
     construir_assertion,
     guardar_assertion,
     hornear_png,
 )
-from PIL import Image, UnidentifiedImageError
 
+load_dotenv()
 
 MIN_BADGE_SIZE = 400
 TARGET_BADGE_SIZE = (400, 400)
@@ -40,6 +41,8 @@ ASSERTIONS_DIR = BASE_DIR / "output" / "assertions"
 ASSERTIONS_DIR.mkdir(parents=True, exist_ok=True)
 
 STATIC_DIR = BASE_DIR / "static"
+IMAGES_DIR = BASE_DIR / "static" / "images"
+
 UPLOADS_DIR = BASE_DIR / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -65,21 +68,25 @@ ACCEPTED_CODES = {
 PUBLIC_PATHS = {
     "/",
     "/login",
-    "/verify-id",
+    "/verify",
     "/verify-png",
+    "/verify-id",
     "/verify-email-hash",
     "/favicon.ico",
 }
 
 PUBLIC_PREFIXES = (
     "/static/",
+    "/images/",
     "/badges-baked/",
     "/assertions/",
     "/uploaded-badges/",
     "/public-config/",
+    "/verify-id/",
 )
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+app.mount("/images", StaticFiles(directory=str(IMAGES_DIR)), name="images")
 app.mount("/badges-baked", StaticFiles(directory=str(BADGES_BAKED_DIR)), name="badges-baked")
 app.mount("/uploaded-badges", StaticFiles(directory=str(BADGE_ASSETS_DIR)), name="uploaded-badges")
 app.mount("/public-config", StaticFiles(directory=str(CONFIG_DIR)), name="public-config")
@@ -157,23 +164,31 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
 
         token = get_request_token(request)
         if not token:
-            return RedirectResponse(url=build_login_redirect(path), status_code=302)
+            return RedirectResponse(
+                url=build_login_redirect(path),
+                status_code=302,
+            )
 
         try:
             payload = decode_jwt_token(token)
             full_tkn = (payload.get("tkn") or "").strip().lower()
-            short_code = extract_code_from_tkn(full_tkn)
-            print(f"Access code: {short_code} | path={path}")
+            shortcode = extract_code_from_tkn(full_tkn)
         except Exception:
-            return RedirectResponse(url=build_login_redirect(path), status_code=302)
+            return RedirectResponse(
+                url=build_login_redirect(path),
+                status_code=302,
+            )
 
-        if not full_tkn or not short_code or short_code not in ACCEPTED_CODES:
-            return RedirectResponse(url=build_login_redirect(path), status_code=302)
+        if not full_tkn or not shortcode or shortcode not in ACCEPTED_CODES:
+            return RedirectResponse(
+                url=build_login_redirect(path),
+                status_code=302,
+            )
 
         request.state.jwt_payload = payload
         request.state.jwt_token = token
         request.state.jwt_tkn = full_tkn
-        request.state.jwt_code = short_code
+        request.state.jwt_code = shortcode
         return await call_next(request)
 
 
@@ -211,8 +226,14 @@ def listar_badge_classes():
 
 
 def html_page(body: str, request: Request | None = None) -> HTMLResponse:
+    head_path = STATIC_DIR / "head.html"
     header_path = STATIC_DIR / "header.html"
     footer_path = STATIC_DIR / "footer.html"
+
+    try:
+        head_html = head_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        head_html = ""
 
     try:
         header_html = header_path.read_text(encoding="utf-8")
@@ -224,38 +245,36 @@ def html_page(body: str, request: Request | None = None) -> HTMLResponse:
     except FileNotFoundError:
         footer_html = ""
 
+    path = request.url.path if request is not None else "/"
     current_token = get_request_token(request) if request is not None else ""
-    auth_bootstrap = f"""
-    <script>
-      window.APP_JWT_TOKEN = {json.dumps(current_token)};
-      window.APP_TOKEN_PARAM = {json.dumps(TOKEN_QUERY_PARAM)};
-    </script>
-    <script src="/static/auth-guard.js"></script>
-    """ if current_token else ""
+    public_paths_js = json.dumps(list(PUBLIC_PATHS))
+    public_prefixes_js = json.dumps(list(PUBLIC_PREFIXES))
+
+    if is_public_path(path):
+        auth_bootstrap = f"""
+        <script>
+          window.PUBLIC_PATHS = {public_paths_js};
+          window.PUBLIC_PREFIXES = {public_prefixes_js};
+        </script>
+        """
+    else:
+        auth_bootstrap = f"""
+        <script>
+          window.APP_JWT_TOKEN = {json.dumps(current_token)};
+          window.APP_TOKEN_PARAM = {json.dumps(TOKEN_QUERY_PARAM)};
+          window.PUBLIC_PATHS = {public_paths_js};
+          window.PUBLIC_PREFIXES = {public_prefixes_js};
+        </script>
+        <script src="/static/auth-guard.js"></script>
+        """ if current_token else ""
 
     full_html = f"""
     <!DOCTYPE html>
     <html lang="es">
-    <head>
-      <meta charset="UTF-8">
-      <title>Open Badges</title>
-      <link rel="stylesheet" href="/static/styles.css">
-      <style>
-        .modal-backdrop {{ position: fixed; inset: 0; background: rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; z-index:9999; }}
-        .modal {{ background:#fff; padding:1rem 1.25rem; max-width:640px; width:92%; border-radius:10px; }}
-        .row {{ margin-bottom: .85rem; }}
-        label {{ font-weight: 600; display:block; margin-bottom:.25rem; }}
-        input, select, button, textarea {{ font: inherit; }}
-        .error {{ color:#b00020; }}
-        .success {{ color:#176b2c; }}
-        pre {{ white-space: pre-wrap; word-break: break-word; background:#f6f6f6; padding:1rem; border-radius:8px; }}
-        table {{ border-collapse: collapse; width: 100%; }}
-        th, td {{ border: 1px solid #ccc; padding: 6px; text-align:left; vertical-align:top; }}
-      </style>
-    </head>
+    {head_html}
     <body>
       {header_html}
-      <main>
+      <main class="page-main">
         {body}
       </main>
       {auth_bootstrap}
@@ -376,8 +395,15 @@ def build_email_verify_script(request: Request | None = None) -> str:
     return f"""
     <script>
     function openEmailVerifyModal(assertionId) {{
-      document.getElementById('assertion_id').value = assertionId;
-      document.getElementById('email-modal').style.display = 'block';
+      const assertionInput = document.getElementById('assertion_id');
+      const modal = document.getElementById('email-modal-backdrop') || document.getElementById('email-modal');
+      if (assertionInput) assertionInput.value = assertionId;
+      if (modal) modal.style.display = 'block';
+    }}
+
+    function closeEmailModal() {{
+      const modal = document.getElementById('email-modal-backdrop') || document.getElementById('email-modal');
+      if (modal) modal.style.display = 'none';
     }}
 
     async function checkEmailHash(event) {{
@@ -397,17 +423,251 @@ def build_email_verify_script(request: Request | None = None) -> str:
       const data = await resp.json();
       const resultElem = document.getElementById('email-check-result');
 
+      if (!resultElem) return false;
+
       if (!data.ok) {{
+        resultElem.className = 'fail';
         resultElem.textContent = 'Error: ' + (data.error || 'desconocido');
       }} else if (data.match) {{
-        resultElem.textContent = 'El email coincide con el hash del badge.';
+        resultElem.className = 'success';
+        resultElem.textContent = '✓ El email coincide con el hash del badge.';
       }} else {{
-        resultElem.textContent = 'El email NO coincide con el hash del badge.';
+        resultElem.className = 'error';
+        resultElem.textContent = '✗ El email NO coincide con el hash del badge.';
       }}
       return false;
     }}
     </script>
     """
+
+
+def render_assertion_result(
+    request: Request,
+    assertion: dict,
+    source_filename: str | None = None,
+) -> HTMLResponse:
+    recipient = assertion.get("recipient") or {}
+    recipient_hashed = isinstance(recipient, dict) and bool(recipient.get("hashed"))
+
+    assertion_url = assertion.get("id", "") or ""
+    assertion_id = assertion_url.rstrip("/").split("/")[-1] if assertion_url else ""
+
+    badge_url = assertion.get("badge", "") or ""
+    image_url = assertion.get("image", "") or ""
+    if image_url and not image_url.startswith(("http://", "https://", "/")):
+        image_url = "/" + image_url.lstrip("/")
+    issued_on = assertion.get("issuedOn", "") or ""
+    name = assertion.get("name", "") or ""
+    description = assertion.get("description", "") or ""
+    badge_name = assertion.get("badgeName", "") or ""
+    badge_description = assertion.get("badgeDescription", "") or ""
+    issuer_name = assertion.get("issuerName", "") or ""
+
+    issuer = assertion.get("issuer", {}) or {}
+    verification = assertion.get("verification", {}) or {}
+    verification_type = verification.get("type", "")
+    verification_url = verification.get("url", "")
+    batch = assertion.get("batch", {}) or {}
+    batch_id = batch.get("id", "")
+
+    issuer_description = issuer.get("description", "") if isinstance(issuer, dict) else ""
+    issuer_website = issuer.get("url", "") if isinstance(issuer, dict) else ""
+    issuer_id = issuer.get("id", "") if isinstance(issuer, dict) else ""
+
+    pretty = html.escape(json.dumps(assertion, ensure_ascii=False, indent=2))
+
+    assertion_id_safe = html.escape(assertion_id or "—")
+    filename_safe = html.escape(source_filename or "(sin nombre)")
+    badge_name_safe = html.escape(badge_name or "(sin nombre)")
+    badge_desc_safe = html.escape(description or badge_description or "—")
+    recipient_name_safe = html.escape(name or "(no especificado)")
+    issuer_name_safe = html.escape(issuer_name or "(no especificado)")
+    issued_on_safe = html.escape(issued_on or "(sin fecha)")
+    batch_id_safe = html.escape(batch_id or "(sin batch)")
+    assertion_url_safe = html.escape(assertion_url or "#", quote=True)
+    badge_url_safe = html.escape(badge_url or "#", quote=True)
+    image_url_safe = html.escape(image_url or "", quote=True)
+    expiration_text_safe = "Sin caducidad (no expira)"
+    issuer_description_safe = html.escape(issuer_description or "—")
+
+    issuer_website_link = (
+        f'<a href="{html.escape(issuer_website, quote=True)}" target="_blank" rel="noopener">Website</a>'
+        if issuer_website else "—"
+    )
+
+    issuer_details_link = (
+        f'<a href="{html.escape(issuer_id, quote=True)}" target="_blank" rel="noopener">Ver ficha completa del issuer</a>'
+        if issuer_id else "—"
+    )
+
+    verification_status_text = "Válido (sin errores detectados)"
+    _verification_text_safe = html.escape(
+        f"{verification_type or '(sin tipo)'} → {verification_url or '(sin URL)'}"
+    )
+
+    recipient_alert_html = ""
+    if recipient_hashed:
+        recipient_alert_html = (
+            '<div class="alert alert-warning" '
+            'style="font-size: .8rem;margin-bottom: .25rem;margin-top: .6rem;'
+            'background: #eef2f5;padding: 1em;border-radius: 1em;">'
+                '<span>Para preservar la confidencialidad del titular de la credencial '
+                'no mostramos en clara sus datos. Introduce un correo electrónico para '
+                'verificar que coincide con los datos de la credencial.</span>'
+                '<form onsubmit="return checkEmailHash(event);" '
+                'style="display: flex;padding: 0.4em;margin: 0 20%;">'
+                    f'<input type="hidden" id="assertion_id" value="{assertion_id_safe}">'
+                    '<div class="form-row">'
+                        '<input type="email" id="email_to_check" class="form-input" required="">'
+                    '</div>'
+                    '<button type="submit" class="btn btn-primary" '
+                    'style="height: 1em;margin: 0 1em;font-size: small;">Comprobar</button>'
+                '</form>'
+                '<div id="email-check-result" style="font-size:.85rem;margin-left:20%"></div>'
+            '</div>'
+        )
+
+    if assertion_id:
+        email_button_html = (
+            f'<button type="button" class="btn btn-secondary btn-sm" '
+            f'style="margin-left:.5rem;" '
+            f'onclick="openEmailVerifyModal(\'{assertion_id_safe}\')">'
+            f'Verificar email del receptor'
+            f'</button>'
+        )
+        email_modal_html = f"""
+        <div class="modal-backdrop" id="email-modal-backdrop">
+          <div class="modal">
+            <h3>Verificar email del receptor</h3>
+            <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:.75rem;">
+              Introduce el correo electrónico del receptor para comprobar si coincide con el hash almacenado en la assertion.
+            </p>
+            <form onsubmit="return checkEmailHash(event);">
+              <input type="hidden" id="assertion_id" value="{assertion_id_safe}">
+              <div class="form-row">
+                <label class="form-label" for="email_to_check">Email del receptor</label>
+                <input type="email" id="email_to_check" class="form-input" required>
+              </div>
+              <div id="email-check-result" style="margin-top:.5rem;font-size:.85rem;"></div>
+              <div class="form-row" style="display:flex;justify-content:flex-end;gap:.75rem;margin-top:1rem;">
+                <button type="button" class="btn btn-secondary" onclick="closeEmailModal()">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Comprobar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+        """
+    else:
+        email_button_html = ""
+        email_modal_html = ""
+
+    ctx = {
+        "assertion_id_safe": assertion_id_safe,
+        "filename_safe": filename_safe,
+        "badge_name_safe": badge_name_safe,
+        "badge_desc_safe": badge_desc_safe,
+        "recipient_name_safe": recipient_name_safe,
+        "issuer_name_safe": issuer_name_safe,
+        "issued_on_safe": issued_on_safe,
+        "expiration_text_safe": expiration_text_safe,
+        "issuer_description_safe": issuer_description_safe,
+        "issuer_website_link": issuer_website_link,
+        "issuer_details_link": issuer_details_link,
+        "assertion_url_safe": assertion_url_safe,
+        "badge_url_safe": badge_url_safe,
+        "image_url_safe": image_url_safe,
+        "verification_status_text": verification_status_text,
+        "assertion_json_pretty": pretty,
+        "email_button_html": email_button_html,
+        "email_modal_html": email_modal_html,
+        "recipient_hashed": "true" if recipient_hashed else "",
+        "recipient_alert_html": recipient_alert_html,
+    }
+
+    template_path = STATIC_DIR / "verify-png.html"
+    template_html = template_path.read_text(encoding="utf-8")
+    body = template_html.format(**ctx)
+    body += build_email_verify_script(request)
+    return html_page(body, request)
+
+
+def fetch_json_resource(url: str) -> dict:
+    req = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "OpenBadgesVerifier/1.0",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            payload = resp.read().decode("utf-8", errors="replace")
+    except Exception:
+        return {}
+
+    try:
+        return json.loads(payload)
+    except json.JSONDecodeError:
+        return {}
+
+
+def fetch_issuer_from_badge(assertion: dict) -> dict:
+    if not isinstance(assertion, dict):
+        return assertion
+
+    badge = assertion.get("badge") or {}
+    if isinstance(badge, str):
+        badge_obj = fetch_json_resource(badge)
+    elif isinstance(badge, dict):
+        badge_obj = badge
+    else:
+        return assertion
+
+    if badge_obj:
+        assertion["badge"] = badge_obj
+
+    issuer_obj: dict = {}
+    issuer_id = ""
+
+    issuer_field = badge_obj.get("issuer") or {} if isinstance(badge_obj, dict) else {}
+    if isinstance(issuer_field, str):
+        issuer_id = issuer_field
+        issuer_obj = fetch_json_resource(issuer_id)
+    elif isinstance(issuer_field, dict):
+        issuer_obj = issuer_field
+        issuer_id = issuer_obj.get("id", "") or ""
+    else:
+        return assertion
+
+    if not isinstance(issuer_obj, dict):
+        return assertion
+
+    issuer_from_assertion = assertion.get("issuer") or {}
+    if isinstance(issuer_from_assertion, dict):
+        issuer_obj = issuer_obj or {}
+        for key, value in issuer_from_assertion.items():
+            issuer_obj.setdefault(key, value)
+        if not issuer_id:
+            issuer_id = issuer_from_assertion.get("id", "") or issuer_id
+
+    if issuer_id and "id" not in issuer_obj:
+        issuer_obj["id"] = issuer_id
+
+    if issuer_obj:
+        assertion["issuer"] = issuer_obj
+        issuer_name = issuer_obj.get("name", "") or ""
+        issuer_description = issuer_obj.get("description", "") or ""
+        issuer_url = issuer_obj.get("url", "") or issuer_obj.get("website", "") or ""
+        issuer_id_final = issuer_obj.get("id", "") or issuer_id
+
+        assertion.setdefault("issuerName", issuer_name)
+        assertion.setdefault("issuerDescription", issuer_description)
+        if issuer_url:
+            issuer_obj.setdefault("url", issuer_url)
+        if issuer_id_final:
+            issuer_obj.setdefault("id", issuer_id_final)
+
+    return assertion
 
 
 def fetch_assertion_from_hosted_url(url: str) -> dict:
@@ -420,7 +680,45 @@ def fetch_assertion_from_hosted_url(url: str) -> dict:
     )
     with urllib.request.urlopen(req, timeout=15) as resp:
         payload = resp.read().decode("utf-8")
-    return json.loads(payload)
+
+    data = json.loads(payload)
+    t = data.get("type")
+
+    is_assertion = (
+        (isinstance(t, str) and "Assertion" in t)
+        or (isinstance(t, list) and any("Assertion" in x for x in t))
+    )
+
+    if not is_assertion:
+        return data
+
+    return fetch_issuer_from_badge(data)
+
+
+def load_assertion_by_id(assertion_id: str) -> dict:
+    ruta_json = ASSERTIONS_DIR / f"{assertion_id}.json"
+    if not ruta_json.is_file():
+        raise FileNotFoundError(assertion_id)
+
+    with ruta_json.open("r", encoding="utf-8") as f:
+        assertion = json.load(f)
+
+    return fetch_issuer_from_badge(assertion)
+
+
+def extract_assertion_from_png_bytes(contents: bytes) -> dict:
+    raw = unbake(io.BytesIO(contents))
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8", errors="replace")
+    raw = (raw or "").strip()
+
+    try:
+        assertion = json.loads(raw)
+        return fetch_issuer_from_badge(assertion)
+    except json.JSONDecodeError:
+        if raw.startswith("http://") or raw.startswith("https://"):
+            return fetch_assertion_from_hosted_url(raw)
+        raise ValueError("El fichero no contiene ninguna assertion embebida.")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -456,7 +754,6 @@ async def login_submit(request: Request, email: str = Form(...), next: str = For
 
     full_tkn = build_email_tkn(email_norm)
     short_code = extract_code_from_tkn(full_tkn)
-    print(f"Access code: {short_code} | email={email_norm}")
 
     if short_code not in ACCEPTED_CODES:
         return html_page('<h2>Acceso denegado</h2><p><a href="/login">Volver</a></p>', request)
@@ -473,43 +770,82 @@ async def login_submit(request: Request, email: str = Form(...), next: str = For
     return html_page(body, request)
 
 
-@app.post("/verify-id", response_class=HTMLResponse)
-async def verify_by_id(request: Request, assertion_id: str = Form(...)):
-    ruta_json = ASSERTIONS_DIR / f"{assertion_id}.json"
-    if not ruta_json.is_file():
+@app.get("/verify-id/{assertion_id}", response_class=HTMLResponse)
+async def verify_by_id_get(request: Request, assertion_id: str):
+    try:
+        assertion = load_assertion_by_id(assertion_id)
+        return render_assertion_result(request, assertion, source_filename=f"assertion {assertion_id}")
+    except FileNotFoundError:
         body = f"""
-        <p style="color:red;">Assertion con ID <strong>{html.escape(assertion_id)}</strong> no encontrado.</p>
-        <p><a href="/">Volver</a></p>
+        <main class="page-main">
+          <div class="app-shell">
+            <section class="card">
+              <h2 class="card-title">Resultado verificación</h2>
+              <p class="card-subtitle">
+                Assertion con ID <strong>{html.escape(assertion_id)}</strong> no encontrada.
+              </p>
+              <p style="margin-top:1rem;">
+                <a href="/" class="btn btn-secondary">Volver al verificador</a>
+              </p>
+            </section>
+          </div>
+        </main>
+        """
+        return html_page(body, request)
+    except Exception as e:
+        body = f"""
+        <main class="page-main">
+          <div class="app-shell">
+            <section class="card">
+              <h2 class="card-title">Error al verificar</h2>
+              <p class="alert alert-error">{html.escape(str(e))}</p>
+              <p style="margin-top:1rem;">
+                <a href="/" class="btn btn-secondary">Volver al verificador</a>
+              </p>
+            </section>
+          </div>
+        </main>
         """
         return html_page(body, request)
 
-    with ruta_json.open("r", encoding="utf-8") as f:
-        data = json.load(f)
 
-    pretty = html.escape(json.dumps(data, ensure_ascii=False, indent=2))
-    safe_assertion_id = html.escape(assertion_id, quote=True)
-
-    body = f"""
-    <h2>Resultado verificación por ID</h2>
-    <p><strong>ID:</strong> {safe_assertion_id}</p>
-    <pre>{pretty}</pre>
-    <p><a href="/">Volver</a></p>
-    <button onclick="openEmailVerifyModal('{safe_assertion_id}')">
-      Verificar email del receptor
-    </button>
-
-    <div id="email-modal" style="display:none; margin-top:1rem;">
-      <form onsubmit="return checkEmailHash(event);">
-        <input type="hidden" id="assertion_id" value="{safe_assertion_id}" />
-        <label>Email del receptor:</label>
-        <input type="email" id="email_to_check" required />
-        <button type="submit">Comprobar</button>
-      </form>
-      <div id="email-check-result" style="margin-top:.75rem;"></div>
-    </div>
-    """
-    body += build_email_verify_script(request)
-    return html_page(body, request)
+@app.post("/verify-id", response_class=HTMLResponse)
+async def verify_by_id(request: Request, assertion_id: str = Form(...)):
+    try:
+        assertion = load_assertion_by_id(assertion_id)
+        return render_assertion_result(request, assertion, source_filename=f"assertion {assertion_id}")
+    except FileNotFoundError:
+        body = f"""
+        <main class="page-main">
+          <div class="app-shell">
+            <section class="card">
+              <h2 class="card-title">Resultado verificación</h2>
+              <p class="card-subtitle">
+                Assertion con ID <strong>{html.escape(assertion_id)}</strong> no encontrada.
+              </p>
+              <p style="margin-top:1rem;">
+                <a href="/" class="btn btn-secondary">Volver al verificador</a>
+              </p>
+            </section>
+          </div>
+        </main>
+        """
+        return html_page(body, request)
+    except Exception as e:
+        body = f"""
+        <main class="page-main">
+          <div class="app-shell">
+            <section class="card">
+              <h2 class="card-title">Error al verificar</h2>
+              <p class="alert alert-error">{html.escape(str(e))}</p>
+              <p style="margin-top:1rem;">
+                <a href="/" class="btn btn-secondary">Volver al verificador</a>
+              </p>
+            </section>
+          </div>
+        </main>
+        """
+        return html_page(body, request)
 
 
 @app.post("/verify-png", response_class=HTMLResponse)
@@ -517,72 +853,100 @@ async def verify_by_png(request: Request, file: UploadFile = File(...)):
     contents = await file.read()
 
     try:
-        raw = unbake(io.BytesIO(contents))
-        if isinstance(raw, bytes):
-            raw = raw.decode("utf-8", errors="replace")
-        raw = (raw or "").strip()
-
-        try:
-            assertion = json.loads(raw)
-        except json.JSONDecodeError:
-            if raw.startswith("http://") or raw.startswith("https://"):
-                assertion = fetch_assertion_from_hosted_url(raw)
-            else:
-                body = f"""
-                <h2>Resultado verificación por PNG</h2>
-                <p><strong>Fichero:</strong> {html.escape(file.filename or '(sin nombre)')}</p>
-                <h3>Contenido embebido (no JSON)</h3>
-                <pre>{html.escape(raw)}</pre>
-                <p><a href="/">Volver</a></p>
-                """
-                return html_page(body, request)
-
-        pretty = html.escape(json.dumps(assertion, ensure_ascii=False, indent=2))
-        assertion_url = assertion.get("id", "")
-        assertion_id = assertion_url.rstrip("/").split("/")[-1] if assertion_url else ""
-        safe_assertion_id = html.escape(assertion_id, quote=True)
-
-        verify_button = ""
-        verify_modal = ""
-        if assertion_id:
-            verify_button = f"""
-            <button onclick="openEmailVerifyModal('{safe_assertion_id}')">
-              Verificar email del receptor
-            </button>
-            """
-            verify_modal = f"""
-            <div id="email-modal" style="display:none; margin-top:1rem;">
-              <form onsubmit="return checkEmailHash(event);">
-                <input type="hidden" id="assertion_id" value="{safe_assertion_id}" />
-                <label>Email del receptor:</label>
-                <input type="email" id="email_to_check" required />
-                <button type="submit">Comprobar</button>
-              </form>
-              <div id="email-check-result" style="margin-top:.75rem;"></div>
-            </div>
-            """
-
-        body = f"""
-        <h2>Resultado verificación por PNG</h2>
-        <p><strong>Fichero:</strong> {html.escape(file.filename or '(sin nombre)')}</p>
-        <h3>Assertion resuelto</h3>
-        <pre>{pretty}</pre>
-        <p><a href="/">Volver</a></p>
-        {verify_button}
-        {verify_modal}
-        """
-
-        if assertion_id:
-            body += build_email_verify_script(request)
-
-        return html_page(body, request)
-
+        assertion = extract_assertion_from_png_bytes(contents)
+        return render_assertion_result(
+            request,
+            assertion,
+            source_filename=file.filename or "(sin nombre)",
+        )
     except Exception as e:
         body = f"""
-        <h2>Error al verificar PNG</h2>
-        <p><strong>Fichero:</strong> {html.escape(file.filename or '(sin nombre)')}</p>
-        <p style="color:red;">No se pudo extraer assertion del PNG: {html.escape(str(e))}</p>
-        <p><a href="/">Volver</a></p>
+        <main class="page-main">
+          <div class="app-shell">
+            <section class="card">
+              <h2 class="card-title">Error al verificar PNG</h2>
+              <p class="card-subtitle">
+                Fichero: <strong>{html.escape(file.filename or '(sin nombre)')}</strong>
+              </p>
+              <p class="alert alert-error">
+                No se pudo extraer assertion del PNG: {html.escape(str(e))}
+              </p>
+              <p style="margin-top:1rem;">
+                <a href="/" class="btn btn-secondary">Volver al verificador</a>
+              </p>
+            </section>
+          </div>
+        </main>
+        """
+        return html_page(body, request)
+
+
+@app.post("/verify", response_class=HTMLResponse)
+async def verify(
+    request: Request,
+    file: UploadFile | None = File(None),
+    assertion_id: Optional[str] = Form(None),
+    assertion_url: Optional[str] = Form(None),
+):
+    try:
+        if file and file.filename:
+            contents = await file.read()
+            assertion = extract_assertion_from_png_bytes(contents)
+            source_name = file.filename or "(sin nombre)"
+        elif assertion_id:
+            assertion = load_assertion_by_id(assertion_id)
+            source_name = f"assertion {assertion_id}"
+        elif assertion_url:
+            assertion = fetch_assertion_from_hosted_url(assertion_url.strip())
+            source_name = assertion_url.strip()
+        else:
+            body = """
+            <main class="page-main">
+              <div class="app-shell">
+                <section class="card">
+                  <h2 class="card-title">Error de verificación</h2>
+                  <p>No se ha proporcionado ni PNG, ni assertion_id, ni URL de assertion.</p>
+                  <p style="margin-top:1rem;">
+                    <a href="/" class="btn btn-secondary">Volver al verificador</a>
+                  </p>
+                </section>
+              </div>
+            </main>
+            """
+            return html_page(body, request)
+
+        return render_assertion_result(request, assertion, source_filename=source_name)
+
+    except FileNotFoundError:
+        body = f"""
+        <main class="page-main">
+          <div class="app-shell">
+            <section class="card">
+              <h2 class="card-title">Resultado verificación</h2>
+              <p class="card-subtitle">
+                Assertion con ID <strong>{html.escape(assertion_id or '')}</strong> no encontrada.
+              </p>
+              <p style="margin-top:1rem;">
+                <a href="/" class="btn btn-secondary">Volver al verificador</a>
+              </p>
+            </section>
+          </div>
+        </main>
+        """
+        return html_page(body, request)
+    except Exception as e:
+        body = f"""
+        <main class="page-main">
+          <div class="app-shell">
+            <section class="card">
+              <h2 class="card-title">Error al verificar</h2>
+              <p class="alert alert-error">{html.escape(str(e))}</p>
+              <p style="margin-top:1rem;">
+                <a href="/" class="btn btn-secondary">Volver al verificador</a>
+              </p>
+            </section>
+          </div>
+        </main>
         """
         return html_page(body, request)
 
@@ -779,14 +1143,10 @@ async def issuer_preview(
         recipients_info = "Ningún receptor definido todavía (falta email o CSV)."
 
     token = get_request_token(request)
-
     preview_img_url = ""
 
-    # Prioridad 1: imagen subida en este formulario
     if image_path and image_path.is_file():
         preview_img_url = f"{base_url}/uploaded-badges/{image_path.name}"
-
-    # Prioridad 2: imagen del badge_class
     elif isinstance(badge_class, dict) and badge_class.get("image"):
         preview_img_url = badge_class.get("image")
 
@@ -828,7 +1188,6 @@ async def issuer_preview(
 
 
 @app.post("/issuer/exec", response_class=HTMLResponse)
-@app.post("/issuer/exec", response_class=HTMLResponse)
 async def issuer_exec(
     request: Request,
     batch_id: str = Form(...),
@@ -853,12 +1212,9 @@ async def issuer_exec(
     badge_class = config.get("badge_class", {}) if isinstance(config, dict) else {}
     config.setdefault("image", {})
 
-    # Prioridad 1: imagen subida específicamente para este lote
     if image_path.is_file():
         config["image"]["file"] = image_path.name
         config["image"]["directory"] = str(image_path.parent)
-
-    # Prioridad 2: imagen del badge_class, resuelta a ruta local
     else:
         badge_image_url = ""
         if isinstance(badge_class, dict):
@@ -991,6 +1347,7 @@ async def issuer_exec(
     """
     return html_page(body, request)
 
+
 @app.post("/config/upload-issuer", response_class=JSONResponse)
 async def upload_issuer(request: Request, file: UploadFile = File(...)):
     original_name = Path(file.filename or "issuer").stem
@@ -1085,8 +1442,7 @@ async def verify_email_hash(request: Request, assertion_id: str = Form(...), ema
     identity = recipient.get("identity", "")
     salt = recipient.get("salt", "")
     email_norm = email.strip().lower()
-    to_hash = (salt + email_norm).encode("utf-8")
-    digest = hashlib.sha256(to_hash).hexdigest()
+    digest = hashlib.sha256((salt + email_norm).encode("utf-8")).hexdigest()
     expected = f"sha256${digest}"
     match = identity == expected
 

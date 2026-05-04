@@ -1,11 +1,15 @@
 (function () {
-  const PUBLIC_PATHS = new Set(["/", "/login", "/verify-id", "/verify-png"]);
+  const PUBLIC_PATHS = window.PUBLIC_PATHS || ["/", "/login"];
+  const PUBLIC_PREFIXES = window.PUBLIC_PREFIXES || ["/static"];
   const LOGIN_PATH = "/login";
   const TOKEN_PARAM = window.APP_TOKEN_PARAM || "token";
   const currentPath = window.location.pathname;
 
   function isPublicPath(path) {
-    return PUBLIC_PATHS.has(path);
+    print(">>> isPublicPath(): ", path)
+    print(">>> PUBLIC_PATHS.includes(path): ", PUBLIC_PATHS.includes(path))
+    if (PUBLIC_PATHS.includes(path)) return true;
+    return PUBLIC_PREFIXES.some((prefix) => path.startsWith(prefix));
   }
 
   function getQueryToken() {
@@ -61,6 +65,7 @@
   }
 
   function run() {
+    print("run");
     if (isPublicPath(currentPath)) return;
 
     const token = getQueryToken() || window.APP_JWT || "";

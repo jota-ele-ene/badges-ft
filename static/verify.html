@@ -1,24 +1,93 @@
-<!DOCTYPE html>
-<html lang="es">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Verificación de Open Badge / Open Badge Verification</title>
-  </head>
-  <body>
-    <h1>Verificación de Open Badge 2.0 / Open Badge Verification</h1>
+<div class="welcome-card">
+    <img src="images/Imagen1.svg" class="welcome-logo-img" alt="Fundación Telefónica" width="200" height="56" loading="eager">
+    <p class="welcome-subtitle">Comprueba la validez de tus credenciales</p>
+    <h1 class="welcome-title">Verificador de credenciales digitales</h1>
+    <p class="welcome-text">Si has recibido una credencial emitida por Fundación Telefónica o asociada a cualquiera de sus programas (Voluntariado corporativo, Reconectados, Escuelas de programación 42), sube la credencial en formato PNG para validarla y comprobar su validez.</p>
+    <p class="welcome-text">Emitimos las credenciales en formato Open Badges 2.0, por lo que si tienes una credencial emitida por otra entidad compatible con este formato también puedes validarla aquí.</p>
+    
+  <section class="card">
+    <div class="card-split">
+      <!-- Verificar por PNG -->
+      <div>
+        <form method="post" action="/verify-png" enctype="multipart/form-data">
+          <div class="form-row">
+            <label class="file-upload">
+              <div class="file-upload-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 17.5V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1.5"></path>
+                  <path d="M12 3v14"></path>
+                  <polyline points="8 9 12 5 16 9"></polyline>
+                </svg>
+              </div>
+              <div class="file-upload-text">
+                <span class="file-upload-title">Selecciona o arrastra un PNG</span>
+                <span class="file-upload-hint">Badge horneado en formato Open Badges 2.0</span>
+                <span class="file-upload-filename" id="file-name-text">Ningún archivo seleccionado</span>
+              </div>
+              <span class="file-upload-button">Elegir archivo</span>
+              <input
+                type="file"
+                id="file"
+                name="file"
+                accept="image/png"
+                required
+                class="file-upload-input"
+              >
+            </label>
 
-    <h2>1. Verificar por ID / Verify by ID</h2>
-    <form action="/verify-id" method="post">
-      <label for="assertion_id">ID de la assertion / Assertion ID:</label>
-      <input type="text" id="assertion_id" name="assertion_id" required />
-      <button type="submit">Verificar / Verify</button>
-    </form>
+            <p class="form-help">
+              No almacenamos tu credencial. Tan sólo la leemos y verificamos su contenido.
+            </p>
+          </div>
+          <button type="submit" class="btn btn-primary">
+            Verificar credencial
+          </button>
+        </form>
+      </div>
 
-    <h2>2. Verificar subiendo PNG / Verify by uploading PNG</h2>
-    <form action="/verify-png" method="post" enctype="multipart/form-data">
-      <label for="file">Selecciona un PNG horneado / Choose baked PNG:</label>
-      <input type="file" id="file" name="file" accept="image/png" required />
-      <button type="submit">Verificar / Verify</button>
-    </form>
-  </body>
-</html>
+      <!-- Verificar por ID de assertion -->
+      <!--
+      <div>
+        <h3 class="card-title" style="margin-bottom:.35rem;">Verificar credencial por ID</h3>
+        <p class="card-subtitle">
+          Introduce el identificador de una assertion generada en este verificador para consultar sus detalles.
+        </p>
+        <form method="post" action="/verify-id">
+          <div class="form-row">
+            <label class="form-label" for="assertion_id">ID de assertion</label>
+            <input type="text" id="assertion_id" name="assertion_id" class="form-input" required>
+            <p class="form-help">
+              Es el identificador que aparece en las credenciales emitidas desde esta plataforma.
+            </p>
+          </div>
+          <button type="submit" class="btn btn-secondary">
+            Verificar por ID
+          </button>
+        </form>
+      </div>
+    -->
+    </div>
+  </section>
+
+</div>
+
+
+</div>
+<script>
+  const fileInput = document.getElementById('file');
+  const fileNameText = document.getElementById('file-name-text');
+
+  if (fileInput && fileNameText) {
+    fileInput.addEventListener('change', () => {
+      const files = fileInput.files;
+      if (!files || !files.length) {
+        fileNameText.textContent = 'Ningún archivo seleccionado';
+      } else if (files.length === 1) {
+        fileNameText.textContent = files[0].name;
+      } else {
+        fileNameText.textContent = `${files.length} archivos seleccionados`;
+      }
+    });
+  }
+</script>

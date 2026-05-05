@@ -2,19 +2,24 @@
   const PUBLIC_PATHS = window.PUBLIC_PATHS || ["/", "/login"];
   const PUBLIC_PREFIXES = window.PUBLIC_PREFIXES || ["/static"];
   const LOGIN_PATH = "/login";
-  const TOKEN_PARAM = window.APP_TOKEN_PARAM || "token";
+  const SESSION_QUERY_PARAM = window.SESSION_QUERY_PARAM || "session_id";
   const currentPath = window.location.pathname;
 
   function isPublicPath(path) {
-    print(">>> isPublicPath(): ", path)
-    print(">>> PUBLIC_PATHS.includes(path): ", PUBLIC_PATHS.includes(path))
+    console.log('>>> isPublicPath():', path);
+    console.log('>>> PUBLIC_PATHS.includes(path):', PUBLIC_PATHS.includes(path));
     if (PUBLIC_PATHS.includes(path)) return true;
     return PUBLIC_PREFIXES.some((prefix) => path.startsWith(prefix));
   }
 
-  function getQueryToken() {
+  function getQuerySessionId() {
     const url = new URL(window.location.href);
-    return url.searchParams.get(TOKEN_PARAM) || "";
+    return url.searchParams.get(SESSION_QUERY_PARAM) || "";
+  }
+
+  function getQueryCode() {
+    const url = new URL(window.location.href);
+    return url.searchParams.get("code") || "";
   }
 
   function redirectToLogin() {
@@ -24,39 +29,52 @@
     }
   }
 
-  function appendTokenToUrl(urlString, token) {
+  function appendSessionToUrl(urlString, sessionId, code) {
     const url = new URL(urlString, window.location.origin);
-    if (!url.searchParams.get(TOKEN_PARAM)) {
-      url.searchParams.set(TOKEN_PARAM, token);
+    if (!url.searchParams.get(SESSION_QUERY_PARAM)) {
+      url.searchParams.set(SESSION_QUERY_PARAM, sessionId);
+    }
+    if (!url.searchParams.get("code")) {
+      url.searchParams.set("code", code);
     }
     return url.pathname + url.search + url.hash;
   }
 
-  function propagateToken(token) {
+  function propagateSession(sessionId, code) {
     document.querySelectorAll('a[href^="/"]').forEach(a => {
       const href = a.getAttribute("href");
       if (!href || href.startsWith("/login")) return;
-      a.setAttribute("href", appendTokenToUrl(href, token));
+      a.setAttribute("href", appendSessionToUrl(href, sessionId, code));
     });
 
     document.querySelectorAll('form[action^="/"]').forEach(form => {
-      let hidden = form.querySelector(`input[name="${TOKEN_PARAM}"]`);
-      if (!hidden) {
-        hidden = document.createElement("input");
-        hidden.type = "hidden";
-        hidden.name = TOKEN_PARAM;
-        form.appendChild(hidden);
+      let sessionInput = form.querySelector(`input[name="${SESSION_QUERY_PARAM}"]`);
+      let codeInput = form.querySelector(`input[name="code"]`);
+      
+      if (!sessionInput) {
+        sessionInput = document.createElement("input");
+        sessionInput.type = "hidden";
+        sessionInput.name = SESSION_QUERY_PARAM;
+        form.appendChild(sessionInput);
       }
-      hidden.value = token;
+      if (!codeInput) {
+        codeInput = document.createElement("input");
+        codeInput.type = "hidden";
+        codeInput.name = "code";
+        form.appendChild(codeInput);
+      }
+      
+      sessionInput.value = sessionId;
+      codeInput.value = code;
     });
 
     const originalFetch = window.fetch.bind(window);
     window.fetch = function (resource, options) {
       try {
         if (typeof resource === "string" && resource.startsWith("/")) {
-          resource = appendTokenToUrl(resource, token);
+          resource = appendSessionToUrl(resource, sessionId, code);
         } else if (resource instanceof Request && resource.url.startsWith(window.location.origin + "/")) {
-          const newUrl = appendTokenToUrl(resource.url, token);
+          const newUrl = appendSessionToUrl(resource.url, sessionId, code);
           resource = new Request(newUrl, resource);
         }
       } catch (e) {}
@@ -65,16 +83,17 @@
   }
 
   function run() {
-    print("run");
     if (isPublicPath(currentPath)) return;
 
-    const token = getQueryToken() || window.APP_JWT || "";
-    if (!token) {
+    const sessionId = getQuerySessionId() || window.APP_SESSION_ID || "";
+    const code = getQueryCode() || window.APP_SESSION_CODE || "";
+    
+    if (!sessionId || !code) {
       redirectToLogin();
       return;
     }
 
-    propagateToken(token);
+    propagateSession(sessionId, code);
   }
 
   run();
